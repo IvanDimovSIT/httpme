@@ -1,4 +1,4 @@
 const std = @import("std");
 const Io = std.Io;
 
-pub const http = @import("http.zig");
+pub const http_server = @import("http_server/mod.zig");

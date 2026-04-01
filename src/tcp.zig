@@ -9,10 +9,19 @@ pub const TcpContext = struct {
     writer: *Io.Writer,
 };
 
-pub const TcpHandler = fn (TcpContext) anyerror!void;
+pub fn TcpHandler(HandlerState: type) type {
+    return struct {
+        handler: *const fn (*HandlerState, TcpContext) anyerror!void,
+        state: *HandlerState,
+
+        fn handleRequest(self: @This(), context: TcpContext) anyerror!void {
+            try self.handler(self.state, context);
+        }
+    };
+}
 
 /// handles single TCP request
-pub fn handleTcp(io: Io, gpa: std.mem.Allocator, server: *Io.net.Server, handler: TcpHandler) !void {
+pub fn handleTcp(HandlerState: type, io: Io, gpa: std.mem.Allocator, server: *Io.net.Server, handler: *const TcpHandler(HandlerState)) !void {
     var arena_allocator = std.heap.ArenaAllocator.init(gpa);
     defer arena_allocator.deinit();
     const arena = arena_allocator.allocator();
@@ -28,6 +37,6 @@ pub fn handleTcp(io: Io, gpa: std.mem.Allocator, server: *Io.net.Server, handler
     const writer = &writer_struct.interface;
 
     const tcp_context = TcpContext{ .io = io, .gpa = gpa, .arena = arena, .reader = reader, .writer = writer };
-    try handler(tcp_context);
+    try handler.handleRequest(tcp_context);
     try writer.flush();
 }
