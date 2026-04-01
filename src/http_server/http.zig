@@ -1,9 +1,10 @@
 const std = @import("std");
 const Io = std.Io;
 
-pub const tcp = @import("../tcp.zig");
-pub const errors = @import("../errors.zig");
-pub const http_request_header = @import("http_request_header.zig");
+const tcp = @import("../tcp.zig");
+const errors = @import("../errors.zig");
+const HttpRequestHeader = @import("http_request_header.zig").HttpRequestHeader;
+const HttpRequest = @import("http_request.zig").HttpRequest;
 
 pub const HttpConfig = struct {
     address: []const u8 = "127.0.0.1",
@@ -46,11 +47,19 @@ fn readHeader(arena: std.mem.Allocator, reader: *std.Io.Reader) ![]u8 {
 fn handleTcp(state: *HttpHandlerState, context: tcp.TcpContext) !void {
     _ = state;
     const header_bytes = try readHeader(context.arena, context.reader);
-    const header = try http_request_header.HttpRequestHeader.init(context.arena, header_bytes);
+    const header = try HttpRequestHeader.parse(context.arena, header_bytes);
     const content_length_str = if (header.request_type == .Get) null else header.getHeader("Content-Length");
     const content_length = if (content_length_str != null) try std.fmt.parseInt(usize, content_length_str.?, 10) else 0;
     const body = try context.reader.readAlloc(context.arena, content_length);
-
-    std.debug.print("handleTcp input: {} {s} , content length:{d} header:\n{s}\nbody:\n{s}\n", .{ header.request_type, header.path, content_length, header.header_bytes, body });
+    const request = HttpRequest{
+        .io = context.io,
+        .gpa = context.gpa,
+        .arena = context.arena,
+        .header = header,
+        .path_variables = &.{}, //TODO detemine path variables
+        .body = body,
+    };
+    _ = request;
+    std.debug.print("handleTcp input: {} {} , content length:{d} header:\n{s}\nbody:\n{s}\n", .{ header.request_type, header.path, content_length, header.header_bytes, body });
     try context.writer.print("Received", .{});
 }

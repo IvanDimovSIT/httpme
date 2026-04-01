@@ -1,4 +1,5 @@
 const std = @import("std");
+const RequestPath = @import("mod.zig").request_path.RequestPath;
 
 pub const HttpRequestType = enum { Get, Post, Put, Patch, Delete, Options, Head, Connect, Trace };
 
@@ -10,13 +11,13 @@ pub const HeaderPair = struct {
 pub const HttpRequestHeader = struct {
     header_bytes: []const u8,
     request_type: HttpRequestType,
-    path: []const u8,
+    path: RequestPath,
     header_pairs: []const HeaderPair,
 
-    pub fn init(arena: std.mem.Allocator, header_bytes: []const u8) !HttpRequestHeader {
+    pub fn parse(arena: std.mem.Allocator, header_bytes: []const u8) !HttpRequestHeader {
         const delimiter = "\r\n";
         var iterator = std.mem.tokenizeSequence(u8, header_bytes, delimiter);
-        const request_line = try parse_request_type_and_path(&iterator);
+        const request_line = try parse_request_type_and_path(arena, &iterator);
         const header_pairs = try parse_header_pairs(arena, &iterator);
 
         const self = HttpRequestHeader{
@@ -47,7 +48,7 @@ fn parse_header_pairs(arena: std.mem.Allocator, iterator: *std.mem.TokenIterator
             continue;
         }
         const delim = ": ";
-        if (std.mem.indexOf(u8, pair_line, delim)) |pos| {
+        if (std.mem.find(u8, pair_line, delim)) |pos| {
             const key = pair_line[0..pos];
             const value = pair_line[pos + delim.len ..];
             const header_pair = HeaderPair{
@@ -63,7 +64,7 @@ fn parse_header_pairs(arena: std.mem.Allocator, iterator: *std.mem.TokenIterator
     return try header_pairs.toOwnedSlice(arena);
 }
 
-fn parse_request_type_and_path(iterator: *std.mem.TokenIterator(u8, .sequence)) !struct { HttpRequestType, []const u8 } {
+fn parse_request_type_and_path(arena: std.mem.Allocator, iterator: *std.mem.TokenIterator(u8, .sequence)) !struct { HttpRequestType, RequestPath } {
     const first_line = iterator.next();
     if (first_line == null) {
         return error.HeaderEmpty;
@@ -80,13 +81,14 @@ fn parse_request_type_and_path(iterator: *std.mem.TokenIterator(u8, .sequence)) 
     if (path_string == null) {
         return error.InvalidRequestLine;
     }
+    const path = try RequestPath.parse(arena, path_string.?);
 
     const http_version = first_line_iter.next();
     if (http_version == null) {
         return error.InvalidRequestLine;
     }
 
-    return .{ request_type, path_string.? };
+    return .{ request_type, path };
 }
 
 fn parse_request_type(string: []const u8) !HttpRequestType {
