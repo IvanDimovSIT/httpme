@@ -10,4 +10,14 @@ pub const HttpRequest = struct {
     header: HttpRequestHeader,
     path_variables: [][]const u8,
     body: []const u8,
+
+    pub fn getRequestParam(self: *const HttpRequest, param_key: []const u8) ?[]const u8 {
+        for (self.header.path.request_params) |request_param| {
+            if (std.mem.eql(u8, request_param.key, param_key)) {
+                return request_param.value;
+            }
+        }
+
+        return null;
+    }
 };

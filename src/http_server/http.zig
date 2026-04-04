@@ -3,18 +3,18 @@ const Io = std.Io;
 
 const tcp = @import("../tcp.zig");
 const errors = @import("../errors.zig");
-const HttpRequestHeader = @import("http_request_header.zig").HttpRequestHeader;
-const HttpRequest = @import("http_request.zig").HttpRequest;
+const mod = @import("mod.zig");
+const HttpRequestHeader = mod.http_request_header.HttpRequestHeader;
+const HttpRequest = mod.http_request.HttpRequest;
+const endpoint_handler_mod = mod.endpoint_handler;
+const EndpointPair = endpoint_handler_mod.EndpointPair;
 
-pub const HttpConfig = struct {
-    address: []const u8 = "127.0.0.1",
-    port: u16 = 8080,
-};
+pub const HttpConfig = struct { address: []const u8 = "127.0.0.1", port: u16 = 8080, endpoint_handlers: []const EndpointPair };
 
-const HttpHandlerState = struct {};
+const HttpHandlerState = struct { endpoint_handlers: []const EndpointPair };
 
 pub fn startHttpServer(io: Io, gpa: std.mem.Allocator, config: HttpConfig) !void {
-    var handler_state = HttpHandlerState{};
+    var handler_state = HttpHandlerState{ .endpoint_handlers = config.endpoint_handlers };
     const http_handler = tcp.TcpHandler(HttpHandlerState){
         .state = &handler_state,
         .handler = handleTcp,
@@ -45,21 +45,29 @@ fn readHeader(arena: std.mem.Allocator, reader: *std.Io.Reader) ![]u8 {
 }
 
 fn handleTcp(state: *HttpHandlerState, context: tcp.TcpContext) !void {
-    _ = state;
     const header_bytes = try readHeader(context.arena, context.reader);
     const header = try HttpRequestHeader.parse(context.arena, header_bytes);
+    const endpoint_handler = try endpoint_handler_mod.findHandler(context.arena, state.endpoint_handlers, &header.path);
+    if (endpoint_handler == null) {
+        // TODO: return valid response
+        try context.writer.print("Endpoint not found", .{});
+        return;
+    }
+
     const content_length_str = if (header.request_type == .Get) null else header.getHeader("Content-Length");
     const content_length = if (content_length_str != null) try std.fmt.parseInt(usize, content_length_str.?, 10) else 0;
     const body = try context.reader.readAlloc(context.arena, content_length);
-    const request = HttpRequest{
+    var request = HttpRequest{
         .io = context.io,
         .gpa = context.gpa,
         .arena = context.arena,
         .header = header,
-        .path_variables = &.{}, //TODO detemine path variables
+        .path_variables = endpoint_handler.?.path_variables,
         .body = body,
     };
-    _ = request;
+    const response = try endpoint_handler.?.handler(&request);
+
+    std.debug.print("params {any}", .{request.header.path.request_params});
     std.debug.print("handleTcp input: {} {} , content length:{d} header:\n{s}\nbody:\n{s}\n", .{ header.request_type, header.path, content_length, header.header_bytes, body });
-    try context.writer.print("Received", .{});
+    try context.writer.print("Received,\n{s}", .{response.body});
 }

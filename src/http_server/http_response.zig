@@ -1,4 +1,4 @@
-pub const ResponseType = enum(u8) {
+pub const ResponseType = enum(u16) {
     Ok = 200,
     BadRequest = 400,
     InternalServerError = 500,
