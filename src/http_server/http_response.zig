@@ -31,7 +31,7 @@ pub const HttpResponse = struct {
 
     pub fn writeResponseString(self: HttpResponse, writer: *std.Io.Writer) !void {
         const args = .{ self.response_type.getDescription(), self.content_type, self.body.len, self.body };
-        try writer.print("HTTP/1.1 {s}\r\nContent-Type: {s}\r\nContent-Length: {d}\r\n\r\n{s}", args);
+        try writer.print("HTTP/1.1 {s}\r\nContent-Type: {s}\r\nConnection: close\r\nContent-Length: {d}\r\n\r\n{s}", args);
         try writer.flush();
     }
 };

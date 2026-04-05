@@ -21,7 +21,7 @@ const not_found_response = HttpResponse{
     .body = "{\"error\":\"Resource not found\"}",
 };
 
-pub fn startHttpServer(io: Io, gpa: std.mem.Allocator, config: HttpConfig) !void {
+pub fn startHttpServer(gpa: std.mem.Allocator, config: HttpConfig) !void {
     const handler_pairs = try EndpointPair.allocPairs(gpa, config.endpoint_handlers);
     defer EndpointPair.dealoc(gpa, handler_pairs);
 
@@ -31,14 +31,18 @@ pub fn startHttpServer(io: Io, gpa: std.mem.Allocator, config: HttpConfig) !void
         .handler = handleTcp,
     };
 
+    var thread_pool: Io.Threaded = Io.Threaded.init(gpa, .{});
+    defer thread_pool.deinit();
+    const io = thread_pool.io();
+
     const address = try Io.net.IpAddress.parse(config.address, config.port);
     var server = try Io.net.IpAddress.listen(address, io, .{});
     defer server.deinit(io);
-    std.debug.print("Starting server on {s}:{d}\n", .{ config.address, config.port });
+    std.log.info("Starting server on {s}:{d}", .{ config.address, config.port });
 
     while (true) {
         tcp.handleTcp(HttpHandlerState, io, gpa, &server, &http_handler) catch |err| {
-            std.debug.print("ERROR: {}\n", .{err});
+            std.log.err("{}", .{err});
         };
     }
 }
@@ -59,7 +63,7 @@ fn readHeader(arena: std.mem.Allocator, reader: *std.Io.Reader) ![]u8 {
 
 fn handleRequest(endpoint_handler: EndpointHandler, request: *HttpRequest) HttpResponse {
     return endpoint_handler(request) catch |err| {
-        std.debug.print("ERROR {}\n", .{err});
+        std.log.err("{}", .{err});
         return HttpResponse{
             .response_type = .InternalServerError,
             .body = "{\"error\": \"An unexpected error occurred\"}",
@@ -68,7 +72,7 @@ fn handleRequest(endpoint_handler: EndpointHandler, request: *HttpRequest) HttpR
 }
 
 fn logRequest(request_header: *const HttpRequestHeader, response: *const HttpResponse) void {
-    std.debug.print("INFO request: {} {s}; response: {}\n", .{ request_header.request_type, request_header.raw_path, response.response_type });
+    std.log.info("request: {} {s}; response: {}", .{ request_header.request_type, request_header.raw_path, response.response_type });
 }
 
 fn handleTcp(state: *HttpHandlerState, context: tcp.TcpContext) !void {

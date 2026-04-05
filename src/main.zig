@@ -10,11 +10,10 @@ const HttpResponse = httpme.http_server.http_response.HttpResponse;
 const HttpResponseType = httpme.http_server.http_response.HttpResponseType;
 
 pub fn main(init: std.process.Init) !void {
-    const io = init.io;
     const gpa = init.gpa;
     const paths = [_]PathHandlerPair{ .{ .path = "/hello", .handler = helloEndpoint }, .{ .path = "/hello/*", .handler = helloAnyEndpoint } };
 
-    try http.startHttpServer(io, gpa, .{ .endpoint_handlers = &paths });
+    try http.startHttpServer(gpa, .{ .endpoint_handlers = &paths });
 }
 
 fn helloEndpoint(req: *HttpRequest) !HttpResponse {
