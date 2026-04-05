@@ -12,6 +12,7 @@ pub const HttpRequestHeader = struct {
     header_bytes: []const u8,
     request_type: HttpRequestType,
     path: RequestPath,
+    raw_path: []const u8,
     header_pairs: []const HeaderPair,
 
     pub fn parse(arena: std.mem.Allocator, header_bytes: []const u8) !HttpRequestHeader {
@@ -22,8 +23,9 @@ pub const HttpRequestHeader = struct {
 
         const self = HttpRequestHeader{
             .header_bytes = header_bytes,
-            .request_type = request_line.@"0",
-            .path = request_line.@"1",
+            .request_type = request_line.request_type,
+            .path = request_line.request_path,
+            .raw_path = request_line.raw_path,
             .header_pairs = header_pairs,
         };
 
@@ -64,7 +66,12 @@ fn parse_header_pairs(arena: std.mem.Allocator, iterator: *std.mem.TokenIterator
     return try header_pairs.toOwnedSlice(arena);
 }
 
-fn parse_request_type_and_path(arena: std.mem.Allocator, iterator: *std.mem.TokenIterator(u8, .sequence)) !struct { HttpRequestType, RequestPath } {
+const RequestLine = struct {
+    request_type: HttpRequestType,
+    request_path: RequestPath,
+    raw_path: []const u8,
+};
+fn parse_request_type_and_path(arena: std.mem.Allocator, iterator: *std.mem.TokenIterator(u8, .sequence)) !RequestLine {
     const first_line = iterator.next();
     if (first_line == null) {
         return error.HeaderEmpty;
@@ -88,7 +95,7 @@ fn parse_request_type_and_path(arena: std.mem.Allocator, iterator: *std.mem.Toke
         return error.InvalidRequestLine;
     }
 
-    return .{ request_type, path };
+    return .{ .request_type = request_type, .request_path = path, .raw_path = path_string.? };
 }
 
 fn parse_request_type(string: []const u8) !HttpRequestType {

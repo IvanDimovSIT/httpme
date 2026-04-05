@@ -30,7 +30,7 @@ pub const EndpointPair = struct {
         return try endpoints.toOwnedSlice(gpa);
     }
 
-    pub fn dealoc(pairs: []const EndpointPair, gpa: std.mem.Allocator) void {
+    pub fn dealoc(gpa: std.mem.Allocator, pairs: []const EndpointPair) void {
         for (pairs) |pair| {
             gpa.free(pair.path_parts);
         }
@@ -41,10 +41,7 @@ pub const EndpointPair = struct {
 pub const ResolvedPath = struct { handler: EndpointHandler, path_variables: [][]const u8 };
 
 pub fn findHandler(arena: std.mem.Allocator, handlers: []const EndpointPair, request_path: *const RequestPath) !?ResolvedPath {
-    std.debug.print("start findHandler request {any}\n", .{request_path.path_parts});
-
     outer: for (handlers) |handler| {
-        std.debug.print("findHandler handle {any}\n", .{handler.path_parts});
         if (request_path.path_parts.len != handler.path_parts.len) {
             continue;
         }
@@ -57,7 +54,6 @@ pub fn findHandler(arena: std.mem.Allocator, handlers: []const EndpointPair, req
                 continue :outer;
             }
         }
-        std.debug.print("findHandler resolved path {any}\n", .{handler.path_parts});
         return ResolvedPath{ .handler = handler.handler, .path_variables = try path_variables.toOwnedSlice(arena) };
     }
 

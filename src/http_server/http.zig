@@ -8,21 +8,34 @@ const HttpRequestHeader = mod.http_request_header.HttpRequestHeader;
 const HttpRequest = mod.http_request.HttpRequest;
 const endpoint_handler_mod = mod.endpoint_handler;
 const EndpointPair = endpoint_handler_mod.EndpointPair;
+const PathHandlerPair = endpoint_handler_mod.PathHandlerPair;
+const EndpointHandler = endpoint_handler_mod.EndpointHandler;
+const HttpResponse = mod.http_response.HttpResponse;
 
-pub const HttpConfig = struct { address: []const u8 = "127.0.0.1", port: u16 = 8080, endpoint_handlers: []const EndpointPair };
+pub const HttpConfig = struct { address: []const u8 = "127.0.0.1", port: u16 = 8080, endpoint_handlers: []const PathHandlerPair };
 
 const HttpHandlerState = struct { endpoint_handlers: []const EndpointPair };
 
+const not_found_response = HttpResponse{
+    .response_type = .NotFound,
+    .body = "{\"error\":\"Resource not found\"}",
+};
+
 pub fn startHttpServer(io: Io, gpa: std.mem.Allocator, config: HttpConfig) !void {
-    var handler_state = HttpHandlerState{ .endpoint_handlers = config.endpoint_handlers };
+    const handler_pairs = try EndpointPair.allocPairs(gpa, config.endpoint_handlers);
+    defer EndpointPair.dealoc(gpa, handler_pairs);
+
+    var handler_state = HttpHandlerState{ .endpoint_handlers = handler_pairs };
     const http_handler = tcp.TcpHandler(HttpHandlerState){
         .state = &handler_state,
         .handler = handleTcp,
     };
+
     const address = try Io.net.IpAddress.parse(config.address, config.port);
     var server = try Io.net.IpAddress.listen(address, io, .{});
     defer server.deinit(io);
     std.debug.print("Starting server on {s}:{d}\n", .{ config.address, config.port });
+
     while (true) {
         tcp.handleTcp(HttpHandlerState, io, gpa, &server, &http_handler) catch |err| {
             std.debug.print("ERROR: {}\n", .{err});
@@ -44,13 +57,27 @@ fn readHeader(arena: std.mem.Allocator, reader: *std.Io.Reader) ![]u8 {
     return array.toOwnedSlice(arena);
 }
 
+fn handleRequest(endpoint_handler: EndpointHandler, request: *HttpRequest) HttpResponse {
+    return endpoint_handler(request) catch |err| {
+        std.debug.print("ERROR {}\n", .{err});
+        return HttpResponse{
+            .response_type = .InternalServerError,
+            .body = "{\"error\": \"An unexpected error occurred\"}",
+        };
+    };
+}
+
+fn logRequest(request_header: *const HttpRequestHeader, response: *const HttpResponse) void {
+    std.debug.print("INFO request: {} {s}; response: {}\n", .{ request_header.request_type, request_header.raw_path, response.response_type });
+}
+
 fn handleTcp(state: *HttpHandlerState, context: tcp.TcpContext) !void {
     const header_bytes = try readHeader(context.arena, context.reader);
     const header = try HttpRequestHeader.parse(context.arena, header_bytes);
     const endpoint_handler = try endpoint_handler_mod.findHandler(context.arena, state.endpoint_handlers, &header.path);
     if (endpoint_handler == null) {
-        // TODO: return valid response
-        try context.writer.print("Endpoint not found", .{});
+        try not_found_response.writeResponseString(context.writer);
+        logRequest(&header, &not_found_response);
         return;
     }
 
@@ -65,9 +92,8 @@ fn handleTcp(state: *HttpHandlerState, context: tcp.TcpContext) !void {
         .path_variables = endpoint_handler.?.path_variables,
         .body = body,
     };
-    const response = try endpoint_handler.?.handler(&request);
+    const response = handleRequest(endpoint_handler.?.handler, &request);
 
-    std.debug.print("params {any}", .{request.header.path.request_params});
-    std.debug.print("handleTcp input: {} {} , content length:{d} header:\n{s}\nbody:\n{s}\n", .{ header.request_type, header.path, content_length, header.header_bytes, body });
-    try context.writer.print("Received,\n{s}", .{response.body});
+    try response.writeResponseString(context.writer);
+    logRequest(&header, &response);
 }
