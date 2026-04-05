@@ -31,20 +31,12 @@ pub fn startHttpServer(gpa: std.mem.Allocator, config: HttpConfig) !void {
         .handler = handleTcp,
     };
 
-    var thread_pool: Io.Threaded = Io.Threaded.init(gpa, .{});
-    defer thread_pool.deinit();
-    const io = thread_pool.io();
-
     const address = try Io.net.IpAddress.parse(config.address, config.port);
-    var server = try Io.net.IpAddress.listen(address, io, .{});
-    defer server.deinit(io);
     std.log.info("Starting server on {s}:{d}", .{ config.address, config.port });
 
-    while (true) {
-        tcp.handleTcp(HttpHandlerState, io, gpa, &server, &http_handler) catch |err| {
-            std.log.err("{}", .{err});
-        };
-    }
+    tcp.handleTcp(HttpHandlerState, gpa, address, &http_handler) catch |err| {
+        std.log.err("{}", .{err});
+    };
 }
 
 fn readHeader(arena: std.mem.Allocator, reader: *std.Io.Reader) ![]u8 {

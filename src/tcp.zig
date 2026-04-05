@@ -20,19 +20,44 @@ pub fn TcpHandler(HandlerState: type) type {
     };
 }
 
-/// handles single TCP request
-pub fn handleTcp(HandlerState: type, io: Io, gpa: std.mem.Allocator, server: *Io.net.Server, handler: *const TcpHandler(HandlerState)) !void {
+pub fn handleTcp(HandlerState: type, gpa: std.mem.Allocator, address: Io.net.IpAddress, handler: *const TcpHandler(HandlerState)) !void {
+    var threaded_io: Io.Threaded = Io.Threaded.init(gpa, .{});
+    defer threaded_io.deinit();
+    const io = threaded_io.io();
+    var server = try Io.net.IpAddress.listen(address, io, .{});
+    defer server.deinit(io);
+
+    while (true) {
+        const server_stream = server.accept(io) catch |err| {
+            std.log.err("{}", .{err});
+            continue;
+        };
+        const thread = std.Thread.spawn(.{}, handleTcpConnectionErrorHandled, .{ HandlerState, io, gpa, server_stream, handler }) catch |err| {
+            std.log.err("Spawn thread error {}", .{err});
+            continue;
+        };
+        thread.detach();
+    }
+}
+
+fn handleTcpConnectionErrorHandled(HandlerState: type, io: Io, gpa: std.mem.Allocator, stream: Io.net.Stream, handler: *const TcpHandler(HandlerState)) void {
+    var steam_mut = stream;
+    handleTcpConnection(HandlerState, io, gpa, &steam_mut, handler) catch |err| {
+        std.log.err("TCP error {}", .{err});
+    };
+}
+
+/// handles single TCP request, consumes the stream
+fn handleTcpConnection(HandlerState: type, io: Io, gpa: std.mem.Allocator, stream: *Io.net.Stream, handler: *const TcpHandler(HandlerState)) !void {
+    defer stream.close(io);
     var arena_allocator = std.heap.ArenaAllocator.init(gpa);
     defer arena_allocator.deinit();
     const arena = arena_allocator.allocator();
 
-    var server_stream = try server.accept(io);
-    defer server_stream.close(io);
-
     var server_reader_buff: [4 * 1024]u8 = undefined;
     var server_writer_buff: [4 * 1024]u8 = undefined;
-    var reader_struct = server_stream.reader(io, &server_reader_buff);
-    var writer_struct = server_stream.writer(io, &server_writer_buff);
+    var reader_struct = stream.reader(io, &server_reader_buff);
+    var writer_struct = stream.writer(io, &server_writer_buff);
     const reader = &reader_struct.interface;
     const writer = &writer_struct.interface;
 
