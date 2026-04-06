@@ -4,43 +4,51 @@ const RequestPath = mod.request_path.RequestPath;
 const HttpRequest = mod.http_request.HttpRequest;
 const HttpResponse = mod.http_response.HttpResponse;
 
-pub const EndpointHandler = *const fn (*HttpRequest) anyerror!HttpResponse;
+pub fn EndpointHandler(AppState: type) type {
+    return *const fn (*HttpRequest(AppState)) anyerror!HttpResponse;
+}
 
 /// use * for path variables
-pub const PathHandlerPair = struct { path: []const u8, handler: EndpointHandler };
+pub fn PathHandlerPair(AppState: type) type {
+    return struct { path: []const u8, handler: EndpointHandler(AppState) };
+}
 
-pub const EndpointPair = struct {
-    path_parts: [][]const u8,
-    handler: EndpointHandler,
+pub fn EndpointPair(AppState: type) type {
+    return struct {
+        path_parts: [][]const u8,
+        handler: EndpointHandler(AppState),
 
-    pub fn allocPairs(gpa: std.mem.Allocator, paths: []const PathHandlerPair) ![]const EndpointPair {
-        var endpoints = std.ArrayList(EndpointPair).empty;
-        errdefer endpoints.deinit(gpa);
-        for (paths) |path| {
-            var iter = std.mem.tokenizeScalar(u8, path.path, '/');
-            var path_part = std.ArrayList([]const u8).empty;
-            errdefer path_part.deinit(gpa);
-            while (iter.next()) |value| {
-                try path_part.append(gpa, value);
+        pub fn allocPairs(gpa: std.mem.Allocator, paths: []const PathHandlerPair(AppState)) ![]const EndpointPair(AppState) {
+            var endpoints = std.ArrayList(EndpointPair(AppState)).empty;
+            errdefer endpoints.deinit(gpa);
+            for (paths) |path| {
+                var iter = std.mem.tokenizeScalar(u8, path.path, '/');
+                var path_part = std.ArrayList([]const u8).empty;
+                errdefer path_part.deinit(gpa);
+                while (iter.next()) |value| {
+                    try path_part.append(gpa, value);
+                }
+                const pair = EndpointPair(AppState){ .path_parts = try path_part.toOwnedSlice(gpa), .handler = path.handler };
+                try endpoints.append(gpa, pair);
             }
-            const pair = EndpointPair{ .path_parts = try path_part.toOwnedSlice(gpa), .handler = path.handler };
-            try endpoints.append(gpa, pair);
+
+            return try endpoints.toOwnedSlice(gpa);
         }
 
-        return try endpoints.toOwnedSlice(gpa);
-    }
-
-    pub fn dealoc(gpa: std.mem.Allocator, pairs: []const EndpointPair) void {
-        for (pairs) |pair| {
-            gpa.free(pair.path_parts);
+        pub fn dealoc(gpa: std.mem.Allocator, pairs: []const EndpointPair(AppState)) void {
+            for (pairs) |pair| {
+                gpa.free(pair.path_parts);
+            }
+            gpa.free(pairs);
         }
-        gpa.free(pairs);
-    }
-};
+    };
+}
 
-pub const ResolvedPath = struct { handler: EndpointHandler, path_variables: [][]const u8 };
+pub fn ResolvedPath(AppState: type) type {
+    return struct { handler: EndpointHandler(AppState), path_variables: [][]const u8 };
+}
 
-pub fn findHandler(arena: std.mem.Allocator, handlers: []const EndpointPair, request_path: *const RequestPath) !?ResolvedPath {
+pub fn findHandler(AppState: type, arena: std.mem.Allocator, handlers: []const EndpointPair(AppState), request_path: *const RequestPath) !?ResolvedPath(AppState) {
     outer: for (handlers) |handler| {
         if (request_path.path_parts.len != handler.path_parts.len) {
             continue;
@@ -54,7 +62,7 @@ pub fn findHandler(arena: std.mem.Allocator, handlers: []const EndpointPair, req
                 continue :outer;
             }
         }
-        return ResolvedPath{ .handler = handler.handler, .path_variables = try path_variables.toOwnedSlice(arena) };
+        return ResolvedPath(AppState){ .handler = handler.handler, .path_variables = try path_variables.toOwnedSlice(arena) };
     }
 
     return null;
