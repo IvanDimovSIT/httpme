@@ -7,21 +7,96 @@ const PathHandlerPair = httpme.http_server.endpoint_handler.PathHandlerPair;
 const HttpRequest = httpme.http_server.http_request.HttpRequest;
 const HttpResponse = httpme.http_server.http_response.HttpResponse;
 const HttpResponseType = httpme.http_server.http_response.HttpResponseType;
-const AppState = httpme.app.AppState;
+const AppState = httpme.app.app_state.AppState;
+const TodoItem = httpme.app.app_state.TodoItem;
 
-pub const paths = [_]PathHandlerPair(AppState){ .{ .path = "/hello", .handler = helloEndpoint }, .{ .path = "/hello/*", .handler = helloAnyEndpoint } };
+const homePageUrl: PathHandlerPair(AppState) = .{ .method = .Get, .path = "/home", .handler = homePage };
+const todoPageUrl: PathHandlerPair(AppState) = .{ .method = .Get, .path = "/todo", .handler = todoListPage };
+const todoPageScriptUrl: PathHandlerPair(AppState) = .{ .method = .Get, .path = "/todo_script.js", .handler = todoListScript };
+const apiAddItemUrl: PathHandlerPair(AppState) = .{ .method = .Post, .path = "/api/item", .handler = apiAddItem };
+const apiGetItemsUrl: PathHandlerPair(AppState) = .{ .method = .Get, .path = "/api/items", .handler = apiGetItems };
+const apiToggleCompleteUrl: PathHandlerPair(AppState) = .{ .method = .Put, .path = "/api/items/toggle/*", .handler = apiToggleComplete };
+pub const paths = [_]PathHandlerPair(AppState){ homePageUrl, todoPageUrl, apiAddItemUrl, apiGetItemsUrl, apiToggleCompleteUrl, todoPageScriptUrl };
 
-fn helloEndpoint(req: *HttpRequest(AppState)) !HttpResponse {
-    _ = req.app_state.visit_counter.fetchAdd(1, std.builtin.AtomicOrder.monotonic);
-    return HttpResponse{ .body = "{\"message\":\"Hello world!\"}", .response_type = .Ok };
+fn homePage(req: *HttpRequest(AppState)) !HttpResponse {
+    const visits = req.app_state.visit_counter.fetchAdd(1, .monotonic);
+    const html = @embedFile("../web/home_page.html");
+    const body = try std.fmt.allocPrint(req.arena, html, .{visits});
+
+    return HttpResponse{ .body = body, .response_type = .Ok, .content_type = "text/html" };
 }
 
-fn helloAnyEndpoint(req: *HttpRequest(AppState)) !HttpResponse {
-    const path_var = req.path_variables[0];
-    const param1 = req.getRequestParam("param1") orelse "<missing param1>";
-    const visit_count = req.app_state.visit_counter.fetchAdd(1, std.builtin.AtomicOrder.monotonic);
+fn todoListPage(req: *HttpRequest(AppState)) !HttpResponse {
+    _ = req.app_state.visit_counter.fetchAdd(1, .monotonic);
+    const html = @embedFile("../web/todo_list_page.html");
+    return HttpResponse{ .body = html, .response_type = .Ok, .content_type = "text/html" };
+}
 
-    const response = try std.fmt.allocPrint(req.arena, "{{\"message\":\"Hello {s}!\",\"param1\":\"{s}\",\"visits\":{d}}}", .{ path_var, param1, visit_count });
+fn todoListScript(req: *HttpRequest(AppState)) !HttpResponse {
+    _ = req;
+    const script = @embedFile("../web/todo_script.js");
+    return HttpResponse{ .body = script, .response_type = .Ok, .content_type = "text" };
+}
 
-    return HttpResponse{ .body = response, .response_type = .Ok };
+fn apiToggleComplete(req: *HttpRequest(AppState)) !HttpResponse {
+    if (req.path_variables.len != 1) {
+        return .{ .response_type = .NotFound };
+    }
+    const id_str = req.path_variables[0];
+    const id = std.fmt.parseInt(u64, id_str, 10) catch {
+        return .{ .response_type = .BadRequest };
+    };
+
+    lockMutex(&req.app_state.mutex);
+    defer req.app_state.mutex.unlock();
+    for (req.app_state.todo_list.items, 0..) |item, i| {
+        if (item.id == id) {
+            req.app_state.todo_list.items[i].is_complete = !item.is_complete;
+            return .{ .response_type = .NoContent };
+        }
+    }
+
+    return .{ .response_type = .NotFound };
+}
+
+fn apiAddItem(req: *HttpRequest(AppState)) !HttpResponse {
+    const TodoItemDto = struct {
+        name: []u8,
+    };
+    var item_parsed = try std.json.parseFromSlice(TodoItemDto, req.arena, req.body, .{});
+    defer item_parsed.deinit();
+
+    const item = item_parsed.value;
+    std.log.info("apiAddItem input {}", .{item});
+    if (std.mem.trim(u8, item.name, &std.ascii.whitespace).len == 0) {
+        return .{ .response_type = .BadRequest, .body = "{\"error\":\"Invalid name field\"}" };
+    }
+
+    const todo_item = TodoItem{ .id = req.app_state.id_counter.fetchAdd(1, .monotonic), .name = try req.app_state.gpa.dupe(u8, item.name), .is_complete = false };
+    lockMutex(&req.app_state.mutex);
+    defer req.app_state.mutex.unlock();
+    try req.app_state.todo_list.append(req.app_state.gpa, todo_item);
+
+    return .{ .response_type = .Created };
+}
+
+fn apiGetItems(req: *HttpRequest(AppState)) !HttpResponse {
+    lockMutex(&req.app_state.mutex);
+    defer req.app_state.mutex.unlock();
+
+    const json_buffer = try req.arena.alloc(u8, 64 * 1024);
+    @memset(json_buffer, 0);
+    const json_formatter = std.json.fmt(req.app_state.todo_list.items, .{});
+    var writer = std.Io.Writer.fixed(json_buffer);
+    try json_formatter.format(&writer);
+    const end = std.mem.indexOfScalar(u8, json_buffer, 0) orelse 0;
+    const body = json_buffer[0..end];
+
+    return .{ .body = body };
+}
+
+fn lockMutex(mutex: *std.atomic.Mutex) void {
+    while (!mutex.tryLock()) {
+        std.Thread.yield() catch {};
+    }
 }

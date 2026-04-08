@@ -1,5 +1,26 @@
 const std = @import("std");
 
+pub const TodoItem = struct {
+    id: u64,
+    name: []u8,
+    is_complete: bool,
+};
+
 pub const AppState = struct {
+    gpa: std.mem.Allocator,
     visit_counter: std.atomic.Value(u64) = .init(0),
+    todo_list: std.ArrayList(TodoItem) = .empty,
+    id_counter: std.atomic.Value(u64) = .init(0),
+    mutex: std.atomic.Mutex = .unlocked,
+
+    pub fn init(self: *AppState, gpa: std.mem.Allocator) void {
+        self.* = .{ .gpa = gpa };
+    }
+
+    pub fn deinit(self: *AppState) void {
+        for (self.todo_list.items) |item| {
+            self.gpa.free(item.name);
+        }
+        self.todo_list.deinit(self.gpa);
+    }
 };

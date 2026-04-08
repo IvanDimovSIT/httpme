@@ -87,7 +87,7 @@ fn handleTcp(AppState: type, state: *HttpHandlerState(AppState), context: tcp.Tc
     };
     const header_bytes = try readHeader(context.arena, context.reader);
     const header = try HttpRequestHeader.parse(context.arena, header_bytes);
-    const endpoint_handler = try endpoint_handler_mod.findHandler(AppState, context.arena, state.endpoint_handlers, &header.path);
+    const endpoint_handler = try endpoint_handler_mod.findHandler(AppState, context.arena, state.endpoint_handlers, &header.path, header.request_type);
     if (endpoint_handler == null) {
         try not_found_response.writeResponseString(context.writer);
         logRequest(&header, &not_found_response);

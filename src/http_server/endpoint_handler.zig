@@ -1,5 +1,6 @@
 const std = @import("std");
 const mod = @import("mod.zig");
+const HttpRequestType = mod.http_request_header.HttpRequestType;
 const RequestPath = mod.request_path.RequestPath;
 const HttpRequest = mod.http_request.HttpRequest;
 const HttpResponse = mod.http_response.HttpResponse;
@@ -10,11 +11,12 @@ pub fn EndpointHandler(AppState: type) type {
 
 /// use * for path variables
 pub fn PathHandlerPair(AppState: type) type {
-    return struct { path: []const u8, handler: EndpointHandler(AppState) };
+    return struct { method: HttpRequestType, path: []const u8, handler: EndpointHandler(AppState) };
 }
 
 pub fn EndpointPair(AppState: type) type {
     return struct {
+        method: HttpRequestType,
         path_parts: [][]const u8,
         handler: EndpointHandler(AppState),
 
@@ -28,7 +30,7 @@ pub fn EndpointPair(AppState: type) type {
                 while (iter.next()) |value| {
                     try path_part.append(gpa, value);
                 }
-                const pair = EndpointPair(AppState){ .path_parts = try path_part.toOwnedSlice(gpa), .handler = path.handler };
+                const pair = EndpointPair(AppState){ .method = path.method, .path_parts = try path_part.toOwnedSlice(gpa), .handler = path.handler };
                 try endpoints.append(gpa, pair);
             }
 
@@ -48,11 +50,15 @@ pub fn ResolvedPath(AppState: type) type {
     return struct { handler: EndpointHandler(AppState), path_variables: [][]const u8 };
 }
 
-pub fn findHandler(AppState: type, arena: std.mem.Allocator, handlers: []const EndpointPair(AppState), request_path: *const RequestPath) !?ResolvedPath(AppState) {
+pub fn findHandler(AppState: type, arena: std.mem.Allocator, handlers: []const EndpointPair(AppState), request_path: *const RequestPath, request_method: HttpRequestType) !?ResolvedPath(AppState) {
     outer: for (handlers) |handler| {
         if (request_path.path_parts.len != handler.path_parts.len) {
             continue;
         }
+        if (request_method != handler.method) {
+            continue;
+        }
+
         var path_variables = std.ArrayList([]const u8).empty;
         for (request_path.path_parts, handler.path_parts) |req_part, handler_part| {
             if (std.mem.eql(u8, handler_part, "*")) {

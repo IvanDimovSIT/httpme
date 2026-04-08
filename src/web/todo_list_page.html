@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>To-do</title>
+        <style>
+            body {
+                font-family:
+                    system-ui,
+                    -apple-system,
+                    sans-serif;
+                margin: 0;
+                padding: 2rem;
+                line-height: 1.5;
+                background: #fafafa;
+                color: #222;
+            }
+            main {
+                max-width: 600px;
+                margin: 0 auto;
+            }
+            h1 {
+                margin-bottom: 1rem;
+            }
+            form {
+                display: flex;
+                gap: 0.5rem;
+                margin-bottom: 1.5rem;
+            }
+            input[type="text"] {
+                flex: 1;
+                padding: 0.4rem 0.5rem;
+                font: inherit;
+            }
+            button {
+                padding: 0.4rem 0.7rem;
+                font: inherit;
+                cursor: pointer;
+            }
+            ul {
+                list-style: none;
+                padding: 0;
+                margin: 0;
+            }
+            li {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                padding: 0.4rem 0;
+                border-bottom: 1px solid #eee;
+            }
+            .done {
+                text-decoration: line-through;
+                color: #777;
+            }
+            nav {
+                margin-top: 1.5rem;
+            }
+            a {
+                color: inherit;
+                text-decoration: underline;
+            }
+            a:hover {
+                text-decoration: none;
+            }
+        </style>
+    </head>
+    <body>
+        <main>
+            <h1>To-do list</h1>
+
+            <form id="add-form">
+                <input
+                    id="item-input"
+                    type="text"
+                    placeholder="New item..."
+                    required
+                />
+                <button type="submit">Add</button>
+            </form>
+
+            <ul id="items"></ul>
+
+            <nav>
+                <a href="/home">← Back</a>
+            </nav>
+        </main>
+
+        <script src="/todo_script.js"></script>
+    </body>
+</html>
