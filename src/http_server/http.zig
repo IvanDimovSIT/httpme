@@ -13,7 +13,7 @@ const EndpointHandler = endpoint_handler_mod.EndpointHandler;
 const HttpResponse = mod.http_response.HttpResponse;
 
 pub fn HttpConfig(AppState: type) type {
-    return struct { address: []const u8 = "127.0.0.1", port: u16 = 8080, endpoint_handlers: []const PathHandlerPair(AppState), app_state: *AppState };
+    return struct { address: []const u8 = "0.0.0.0", port: u16 = 8080, endpoint_handlers: []const PathHandlerPair(AppState), app_state: *AppState };
 }
 
 fn HttpHandlerState(AppState: type) type {

@@ -2,12 +2,14 @@ const std = @import("std");
 
 const httpme = @import("../root.zig");
 const http = httpme.http_server.http;
+const persistence = httpme.app.persistence;
 const EndpointHandler = httpme.http_server.endpoint_handler.EndpointHandler;
 const PathHandlerPair = httpme.http_server.endpoint_handler.PathHandlerPair;
 const HttpRequest = httpme.http_server.http_request.HttpRequest;
 const HttpResponse = httpme.http_server.http_response.HttpResponse;
 const HttpResponseType = httpme.http_server.http_response.HttpResponseType;
 const AppState = httpme.app.app_state.AppState;
+const AppStateModel = httpme.app.app_state.AppStateModel;
 const TodoItem = httpme.app.app_state.TodoItem;
 
 const homePageUrl: PathHandlerPair(AppState) = .{ .method = .Get, .path = "/home", .handler = homePage };
@@ -23,11 +25,16 @@ fn homePage(req: *HttpRequest(AppState)) !HttpResponse {
     const html = @embedFile("../web/home_page.html");
     const body = try std.fmt.allocPrint(req.arena, html, .{visits});
 
+    lockMutex(&req.app_state.mutex);
+    defer req.app_state.mutex.unlock();
+    const app_model = AppStateModel{ .todo_list = req.app_state.todo_list.items, .visit_counter = req.app_state.visit_counter.load(.monotonic), .id_counter = req.app_state.id_counter.load(.monotonic) };
+    try persistence.saveAppState(req.io, &app_model);
+
     return HttpResponse{ .body = body, .response_type = .Ok, .content_type = "text/html" };
 }
 
 fn todoListPage(req: *HttpRequest(AppState)) !HttpResponse {
-    _ = req.app_state.visit_counter.fetchAdd(1, .monotonic);
+    _ = req;
     const html = @embedFile("../web/todo_list_page.html");
     return HttpResponse{ .body = html, .response_type = .Ok, .content_type = "text/html" };
 }
@@ -52,6 +59,9 @@ fn apiToggleComplete(req: *HttpRequest(AppState)) !HttpResponse {
     for (req.app_state.todo_list.items, 0..) |item, i| {
         if (item.id == id) {
             req.app_state.todo_list.items[i].is_complete = !item.is_complete;
+            const app_model = AppStateModel{ .todo_list = req.app_state.todo_list.items, .visit_counter = req.app_state.visit_counter.load(.monotonic), .id_counter = req.app_state.id_counter.load(.monotonic) };
+            try persistence.saveAppState(req.io, &app_model);
+
             return .{ .response_type = .NoContent };
         }
     }
@@ -76,6 +86,8 @@ fn apiAddItem(req: *HttpRequest(AppState)) !HttpResponse {
     lockMutex(&req.app_state.mutex);
     defer req.app_state.mutex.unlock();
     try req.app_state.todo_list.append(req.app_state.gpa, todo_item);
+    const app_model = AppStateModel{ .todo_list = req.app_state.todo_list.items, .visit_counter = req.app_state.visit_counter.load(.monotonic), .id_counter = req.app_state.id_counter.load(.monotonic) };
+    try persistence.saveAppState(req.io, &app_model);
 
     return .{ .response_type = .Created };
 }

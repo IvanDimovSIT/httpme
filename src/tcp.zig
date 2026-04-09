@@ -24,7 +24,7 @@ pub fn handleTcp(HandlerState: type, gpa: std.mem.Allocator, address: Io.net.IpA
     var threaded_io: Io.Threaded = Io.Threaded.init(gpa, .{});
     defer threaded_io.deinit();
     const io = threaded_io.io();
-    var server = try Io.net.IpAddress.listen(address, io, .{});
+    var server = try Io.net.IpAddress.listen(&address, io, .{});
     defer server.deinit(io);
 
     while (true) {

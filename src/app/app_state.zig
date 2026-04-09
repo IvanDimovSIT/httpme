@@ -4,7 +4,13 @@ pub const TodoItem = struct {
     id: u64,
     name: []u8,
     is_complete: bool,
+
+    pub fn clone(item: *const TodoItem, gpa: std.mem.Allocator) !TodoItem {
+        return .{ .id = item.id, .name = try gpa.dupe(u8, item.name), .is_complete = item.is_complete };
+    }
 };
+
+pub const AppStateModel = struct { visit_counter: u64, todo_list: []TodoItem, id_counter: u64 };
 
 pub const AppState = struct {
     gpa: std.mem.Allocator,
