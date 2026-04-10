@@ -33,16 +33,17 @@ fn homePage(req: *HttpRequest(AppState)) !HttpResponse {
     return HttpResponse{ .body = body, .response_type = .Ok, .content_type = "text/html" };
 }
 
-fn todoListPage(req: *HttpRequest(AppState)) !HttpResponse {
-    _ = req;
-    const html = @embedFile("../web/todo_list_page.html");
-    return HttpResponse{ .body = html, .response_type = .Ok, .content_type = "text/html" };
-}
+const todoListPage = serveStatic("todo_list_page.html", "text/html");
+const todoListScript = serveStatic("todo_script.js", "text");
 
-fn todoListScript(req: *HttpRequest(AppState)) !HttpResponse {
-    _ = req;
-    const script = @embedFile("../web/todo_script.js");
-    return HttpResponse{ .body = script, .response_type = .Ok, .content_type = "text" };
+fn serveStatic(comptime file_name: []const u8, comptime content_type: []const u8) *const fn (*HttpRequest(AppState)) anyerror!HttpResponse {
+    return struct {
+        fn serve(req: *HttpRequest(AppState)) !HttpResponse {
+            _ = req;
+            const file = @embedFile("../web/" ++ file_name);
+            return HttpResponse{ .body = file, .response_type = .Ok, .content_type = content_type };
+        }
+    }.serve;
 }
 
 fn apiToggleComplete(req: *HttpRequest(AppState)) !HttpResponse {

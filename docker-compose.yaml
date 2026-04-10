@@ -3,10 +3,3 @@ services:
     build: .
     ports:
       - "8080:8080"
-    working_dir: /app
-    command: ./httpme
-    volumes:
-      - appdata:/app
-
-volumes:
-  appdata:
