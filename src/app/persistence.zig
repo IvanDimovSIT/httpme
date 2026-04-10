@@ -29,8 +29,26 @@ pub fn saveAppState(io: Io, app_state: *const AppStateModel) !void {
     try formatter.format(writer);
 }
 
+/// returns an AppState that needs to be freed with .deinit()
+pub fn loadAppState(io: Io, gpa: std.mem.Allocator) !AppState {
+    const parsed_app_state_model = try loadAppStateModel(io, gpa);
+    defer parsed_app_state_model.deinit();
+    var app_state: AppState = undefined;
+    app_state.init(gpa);
+
+    const app_state_model = parsed_app_state_model.value;
+    app_state.visit_counter = .init(app_state_model.visit_counter);
+    app_state.id_counter = .init(app_state_model.id_counter);
+    for (app_state_model.todo_list) |list_item| {
+        const newListItem = try list_item.clone(gpa);
+        try app_state.todo_list.append(gpa, newListItem);
+    }
+
+    return app_state;
+}
+
 /// returns a parsed AppStateModel that needs to be freed
-pub fn loadAppState(io: Io, gpa: std.mem.Allocator) !std.json.Parsed(AppStateModel) {
+fn loadAppStateModel(io: Io, gpa: std.mem.Allocator) !std.json.Parsed(AppStateModel) {
     const cwd = std.Io.Dir.cwd();
 
     var output_dir = try cwd.openDir(io, save_directory, .{});
