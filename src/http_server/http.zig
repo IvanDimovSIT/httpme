@@ -29,7 +29,7 @@ const internal_server_error_response = HttpResponse{
     .body = "{\"error\": \"An unexpected error occurred\"}",
 };
 
-pub fn startHttpServer(AppState: type, gpa: std.mem.Allocator, config: HttpConfig(AppState)) !void {
+pub fn startHttpServer(AppState: type, io: Io, gpa: std.mem.Allocator, config: HttpConfig(AppState)) !void {
     const handler_pairs = try EndpointPair(AppState).allocPairs(gpa, config.endpoint_handlers);
     defer EndpointPair(AppState).dealoc(gpa, handler_pairs);
 
@@ -42,7 +42,7 @@ pub fn startHttpServer(AppState: type, gpa: std.mem.Allocator, config: HttpConfi
     const address = try Io.net.IpAddress.parse(config.address, config.port);
     std.log.info("Starting server on {s}:{d}", .{ config.address, config.port });
 
-    tcp.handleTcp(HttpHandlerState(AppState), gpa, address, &http_handler) catch |err| {
+    tcp.handleTcp(HttpHandlerState(AppState), io, gpa, address, &http_handler) catch |err| {
         std.log.err("{}", .{err});
     };
 }

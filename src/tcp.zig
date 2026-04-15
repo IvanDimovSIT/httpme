@@ -20,31 +20,39 @@ pub fn TcpHandler(HandlerState: type) type {
     };
 }
 
-pub fn handleTcp(HandlerState: type, gpa: std.mem.Allocator, address: Io.net.IpAddress, handler: *const TcpHandler(HandlerState)) !void {
-    var threaded_io: Io.Threaded = Io.Threaded.init(gpa, .{});
-    defer threaded_io.deinit();
-    const io = threaded_io.io();
+pub fn handleTcp(HandlerState: type, io: Io, gpa: std.mem.Allocator, address: Io.net.IpAddress, handler: *const TcpHandler(HandlerState)) !void {
     var server = try Io.net.IpAddress.listen(&address, io, .{});
     defer server.deinit(io);
+    const handler_fn = handleTcpConnectionErrorHandled(HandlerState);
 
     while (true) {
         const server_stream = server.accept(io) catch |err| {
             std.log.err("{}", .{err});
             continue;
         };
-        const thread = std.Thread.spawn(.{}, handleTcpConnectionErrorHandled, .{ HandlerState, io, gpa, server_stream, handler }) catch |err| {
-            std.log.err("Spawn thread error {}", .{err});
-            continue;
-        };
-        thread.detach();
+        _ = io.async(handler_fn, .{ io, gpa, server_stream, handler });
     }
 }
 
-fn handleTcpConnectionErrorHandled(HandlerState: type, io: Io, gpa: std.mem.Allocator, stream: Io.net.Stream, handler: *const TcpHandler(HandlerState)) void {
-    var steam_mut = stream;
-    handleTcpConnection(HandlerState, io, gpa, &steam_mut, handler) catch |err| {
-        std.log.err("TCP error {}", .{err});
-    };
+fn handleTcpConnectionErrorHandled(HandlerState: type) fn (
+    Io,
+    std.mem.Allocator,
+    Io.net.Stream,
+    *const TcpHandler(HandlerState),
+) void {
+    return struct {
+        fn f(
+            io: Io,
+            gpa: std.mem.Allocator,
+            stream: Io.net.Stream,
+            handler: *const TcpHandler(HandlerState),
+        ) void {
+            var stream_mut = stream;
+            handleTcpConnection(HandlerState, io, gpa, &stream_mut, handler) catch |err| {
+                std.log.err("TCP error {}", .{err});
+            };
+        }
+    }.f;
 }
 
 /// handles single TCP request, consumes the stream

@@ -6,14 +6,16 @@ const AppStateModel = httpme.app.app_state.AppStateModel;
 const TodoItem = httpme.app.app_state.TodoItem;
 
 const save_file_name = "state.json";
-const save_directory = "save";
+//const save_directory = "save";
 
-pub fn saveAppState(io: Io, app_state: *const AppStateModel) !void {
+pub fn saveAppState(io: Io, app_state: *const AppStateModel, save_directory: []const u8) !void {
     const cwd: std.Io.Dir = std.Io.Dir.cwd();
 
-    cwd.createDir(io, save_directory, .default_dir) catch |e| switch (e) {
-        error.PathAlreadyExists => {},
-        else => return e,
+    std.Io.Dir.createDirAbsolute(io, save_directory, .default_dir) catch |e| {
+        switch (e) {
+            error.PathAlreadyExists => {},
+            else => return e,
+        }
     };
 
     var output_dir: std.Io.Dir = try cwd.openDir(io, save_directory, .{});
@@ -30,11 +32,11 @@ pub fn saveAppState(io: Io, app_state: *const AppStateModel) !void {
 }
 
 /// returns an AppState that needs to be freed with .deinit()
-pub fn loadAppState(io: Io, gpa: std.mem.Allocator) !AppState {
-    const parsed_app_state_model = try loadAppStateModel(io, gpa);
+pub fn loadAppState(io: Io, gpa: std.mem.Allocator, save_path: []const u8) !AppState {
+    const parsed_app_state_model = try loadAppStateModel(io, gpa, save_path);
     defer parsed_app_state_model.deinit();
     var app_state: AppState = undefined;
-    app_state.init(gpa);
+    app_state.init(gpa, save_path);
 
     const app_state_model = parsed_app_state_model.value;
     app_state.visit_counter = .init(app_state_model.visit_counter);
@@ -48,7 +50,7 @@ pub fn loadAppState(io: Io, gpa: std.mem.Allocator) !AppState {
 }
 
 /// returns a parsed AppStateModel that needs to be freed
-fn loadAppStateModel(io: Io, gpa: std.mem.Allocator) !std.json.Parsed(AppStateModel) {
+fn loadAppStateModel(io: Io, gpa: std.mem.Allocator, save_directory: []const u8) !std.json.Parsed(AppStateModel) {
     const cwd = std.Io.Dir.cwd();
 
     var output_dir = try cwd.openDir(io, save_directory, .{});

@@ -1,5 +1,7 @@
 services:
   httpme:
+    environment:
+      - APP_SAVE_PATH=/app
     build: .
     ports:
       - "8080:8080"

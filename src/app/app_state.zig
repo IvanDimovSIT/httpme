@@ -14,13 +14,14 @@ pub const AppStateModel = struct { visit_counter: u64, todo_list: []TodoItem, id
 
 pub const AppState = struct {
     gpa: std.mem.Allocator,
+    save_path: []const u8,
     visit_counter: std.atomic.Value(u64) = .init(0),
     todo_list: std.ArrayList(TodoItem) = .empty,
     id_counter: std.atomic.Value(u64) = .init(0),
-    mutex: std.atomic.Mutex = .unlocked,
+    mutex: std.Io.Mutex = .init,
 
-    pub fn init(self: *AppState, gpa: std.mem.Allocator) void {
-        self.* = .{ .gpa = gpa };
+    pub fn init(self: *AppState, gpa: std.mem.Allocator, save_path: []const u8) void {
+        self.* = .{ .gpa = gpa, .save_path = save_path };
     }
 
     pub fn deinit(self: *AppState) void {

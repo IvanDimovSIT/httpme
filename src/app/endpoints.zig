@@ -25,10 +25,10 @@ fn homePage(req: *HttpRequest(AppState)) !HttpResponse {
     const html = @embedFile("../web/home_page.html");
     const body = try std.fmt.allocPrint(req.arena, html, .{visits});
 
-    lockMutex(&req.app_state.mutex);
-    defer req.app_state.mutex.unlock();
+    req.app_state.mutex.lockUncancelable(req.io);
+    defer req.app_state.mutex.unlock(req.io);
     const app_model = AppStateModel{ .todo_list = req.app_state.todo_list.items, .visit_counter = req.app_state.visit_counter.load(.monotonic), .id_counter = req.app_state.id_counter.load(.monotonic) };
-    try persistence.saveAppState(req.io, &app_model);
+    try persistence.saveAppState(req.io, &app_model, req.app_state.save_path);
 
     return HttpResponse{ .body = body, .response_type = .Ok, .content_type = "text/html" };
 }
@@ -55,13 +55,13 @@ fn apiToggleComplete(req: *HttpRequest(AppState)) !HttpResponse {
         return .{ .response_type = .BadRequest };
     };
 
-    lockMutex(&req.app_state.mutex);
-    defer req.app_state.mutex.unlock();
+    req.app_state.mutex.lockUncancelable(req.io);
+    defer req.app_state.mutex.unlock(req.io);
     for (req.app_state.todo_list.items, 0..) |item, i| {
         if (item.id == id) {
             req.app_state.todo_list.items[i].is_complete = !item.is_complete;
             const app_model = AppStateModel{ .todo_list = req.app_state.todo_list.items, .visit_counter = req.app_state.visit_counter.load(.monotonic), .id_counter = req.app_state.id_counter.load(.monotonic) };
-            try persistence.saveAppState(req.io, &app_model);
+            try persistence.saveAppState(req.io, &app_model, req.app_state.save_path);
 
             return .{ .response_type = .NoContent };
         }
@@ -84,18 +84,18 @@ fn apiAddItem(req: *HttpRequest(AppState)) !HttpResponse {
     }
 
     const todo_item = TodoItem{ .id = req.app_state.id_counter.fetchAdd(1, .monotonic), .name = try req.app_state.gpa.dupe(u8, item.name), .is_complete = false };
-    lockMutex(&req.app_state.mutex);
-    defer req.app_state.mutex.unlock();
+    req.app_state.mutex.lockUncancelable(req.io);
+    defer req.app_state.mutex.unlock(req.io);
     try req.app_state.todo_list.append(req.app_state.gpa, todo_item);
     const app_model = AppStateModel{ .todo_list = req.app_state.todo_list.items, .visit_counter = req.app_state.visit_counter.load(.monotonic), .id_counter = req.app_state.id_counter.load(.monotonic) };
-    try persistence.saveAppState(req.io, &app_model);
+    try persistence.saveAppState(req.io, &app_model, req.app_state.save_path);
 
     return .{ .response_type = .Created };
 }
 
 fn apiGetItems(req: *HttpRequest(AppState)) !HttpResponse {
-    lockMutex(&req.app_state.mutex);
-    defer req.app_state.mutex.unlock();
+    req.app_state.mutex.lockUncancelable(req.io);
+    defer req.app_state.mutex.unlock(req.io);
 
     const json_buffer = try req.arena.alloc(u8, 64 * 1024);
     @memset(json_buffer, 0);
@@ -106,10 +106,4 @@ fn apiGetItems(req: *HttpRequest(AppState)) !HttpResponse {
     const body = json_buffer[0..end];
 
     return .{ .body = body };
-}
-
-fn lockMutex(mutex: *std.atomic.Mutex) void {
-    while (!mutex.tryLock()) {
-        std.Thread.yield() catch {};
-    }
 }
