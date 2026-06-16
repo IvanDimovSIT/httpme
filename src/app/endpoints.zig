@@ -97,13 +97,10 @@ fn apiGetItems(req: *HttpRequest(AppState)) !HttpResponse {
     req.app_state.mutex.lockUncancelable(req.io);
     defer req.app_state.mutex.unlock(req.io);
 
-    const json_buffer = try req.arena.alloc(u8, 64 * 1024);
-    @memset(json_buffer, 0);
     const json_formatter = std.json.fmt(req.app_state.todo_list.items, .{});
-    var writer = std.Io.Writer.fixed(json_buffer);
-    try json_formatter.format(&writer);
-    const end = std.mem.indexOfScalar(u8, json_buffer, 0) orelse 0;
-    const body = json_buffer[0..end];
+    var writer = std.Io.Writer.Allocating.init(req.arena);
+    try json_formatter.format(&writer.writer);
+    const body = try writer.toOwnedSlice();
 
     return .{ .body = body };
 }

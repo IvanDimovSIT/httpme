@@ -1,6 +1,8 @@
 const std = @import("std");
 const Io = std.Io;
 
+const MAX_CONNECTIONS = 100;
+
 pub const TcpContext = struct {
     io: Io,
     gpa: std.mem.Allocator,
@@ -21,7 +23,8 @@ pub fn TcpHandler(HandlerState: type) type {
 }
 
 pub fn handleTcp(HandlerState: type, io: Io, gpa: std.mem.Allocator, address: Io.net.IpAddress, handler: *const TcpHandler(HandlerState)) !void {
-    var server = try Io.net.IpAddress.listen(&address, io, .{});
+    var semaphore = Io.Semaphore{ .permits = MAX_CONNECTIONS };
+    var server = try Io.net.IpAddress.listen(&address, io, .{ .reuse_address = true });
     defer server.deinit(io);
     const handler_fn = handleTcpConnectionErrorHandled(HandlerState);
 
@@ -30,23 +33,18 @@ pub fn handleTcp(HandlerState: type, io: Io, gpa: std.mem.Allocator, address: Io
             std.log.err("{}", .{err});
             continue;
         };
-        _ = io.async(handler_fn, .{ io, gpa, server_stream, handler });
+        semaphore.wait(io) catch |err| {
+            std.log.err("Error handling connection, semaphore over the limit: {}", .{err});
+            continue;
+        };
+        _ = io.async(handler_fn, .{ io, gpa, server_stream, handler, &semaphore });
     }
 }
 
-fn handleTcpConnectionErrorHandled(HandlerState: type) fn (
-    Io,
-    std.mem.Allocator,
-    Io.net.Stream,
-    *const TcpHandler(HandlerState),
-) void {
+fn handleTcpConnectionErrorHandled(HandlerState: type) fn (Io, std.mem.Allocator, Io.net.Stream, *const TcpHandler(HandlerState), *Io.Semaphore) void {
     return struct {
-        fn f(
-            io: Io,
-            gpa: std.mem.Allocator,
-            stream: Io.net.Stream,
-            handler: *const TcpHandler(HandlerState),
-        ) void {
+        fn f(io: Io, gpa: std.mem.Allocator, stream: Io.net.Stream, handler: *const TcpHandler(HandlerState), semaphore: *Io.Semaphore) void {
+            defer semaphore.post(io);
             var stream_mut = stream;
             handleTcpConnection(HandlerState, io, gpa, &stream_mut, handler) catch |err| {
                 std.log.err("TCP error {}", .{err});
